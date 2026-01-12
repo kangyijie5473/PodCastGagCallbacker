@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>音频模糊搜索 MVP</title>
+  <style>
+    body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;max-width:880px;margin:24px auto;padding:0 16px}
+    .row{display:flex;gap:12px;align-items:center;margin:8px 0}
+    .results{margin-top:16px}
+    .card{border:1px solid #ddd;border-radius:8px;padding:8px 12px;margin:8px 0}
+    .time{color:#555}
+  </style>
+  <script defer src="/static/app.js"></script>
+  </head>
+<body>
+  <h1>音频模糊搜索 MVP</h1>
+  <div class="row">
+    <input id="file" type="file" accept="audio/*">
+    <button id="btnIndex">解析并建立索引</button>
+  </div>
+  <audio id="player" controls style="width:100%;margin-top:8px"></audio>
+  <div class="row">
+    <input id="q" type="text" placeholder="输入模糊描述，如：主持人讲到AI引发的笑声" style="flex:1">
+    <button id="btnSearch">搜索</button>
+  </div>
+  <div class="results" id="results"></div>
+</body>
+</html>
