@@ -10,23 +10,26 @@ class RAGService:
         self.llm = llm
         self.segments_cache = {} # audio_id -> list of segments
 
-    def _get_segments(self, audio_id: str) -> List[Dict]:
-        if audio_id in self.segments_cache:
-            return self.segments_cache[audio_id]
+    def _get_segments(self, podcast_name: str, audio_id: str) -> List[Dict]:
+        key = f"{podcast_name}/{audio_id}"
+        if key in self.segments_cache:
+            return self.segments_cache[key]
         
-        path = os.path.join(self.searcher.index_dir, audio_id, "segments.json")
+        # Path: data/{podcast_name}/{audio_id}/segments.json
+        path = os.path.join(self.searcher.index_dir, podcast_name, audio_id, "segments.json")
         if not os.path.exists(path):
             return []
             
         with open(path, "r", encoding="utf-8") as f:
             segments = json.load(f)
             
-        self.segments_cache[audio_id] = segments
+        self.segments_cache[key] = segments
         return segments
 
     def _format_context(self, results: List[Dict]) -> str:
         context_parts = []
         for i, res in enumerate(results):
+            podcast = res.get("podcast", "Unknown")
             audio_id = res["audio_id"]
             window = res["window"]
             score = res["score"]
@@ -37,7 +40,7 @@ class RAGService:
             
             if indices:
                 start_idx, end_idx = indices
-                all_segments = self._get_segments(audio_id)
+                all_segments = self._get_segments(podcast, audio_id)
                 if all_segments:
                     chunk_segments = all_segments[start_idx:end_idx]
                     lines = []
@@ -54,13 +57,13 @@ class RAGService:
 
             start_t = window.get("start", 0.0)
             end_t = window.get("end", 0.0)
-            context_parts.append(f"Fragment {i+1} (Source: {audio_id}, Time: {start_t:.1f}-{end_t:.1f}s, Score: {score:.4f}):\n{formatted_content}\n")
+            context_parts.append(f"Fragment {i+1} (Podcast: {podcast}, Episode: {audio_id}, Time: {start_t:.1f}-{end_t:.1f}s, Score: {score:.4f}):\n{formatted_content}\n")
             
         return "\n".join(context_parts)
 
-    def answer(self, audio_id: str,query: str, top_k: int = 5) -> str:
+    def answer(self, query: str, podcast_name: str = None, audio_id: str = None, top_k: int = 5) -> str:
         # 1. Retrieve
-        results = self.searcher.search(query,audio_id=audio_id, top_k=top_k)
+        results = self.searcher.search(query, podcast_name=podcast_name, audio_id=audio_id, top_k=top_k)
         if not results:
             return "No relevant podcast content found to answer your question."
 
@@ -71,7 +74,7 @@ class RAGService:
             "You are a helpful podcast assistant. Your task is to answer the user's question "
             "based ONLY on the provided podcast transcripts. \n"
             "If the provided context does not contain the answer, say so.\n"
-            "Cite the source audio ID and time range when possible.\n"
+            "Cite the source Podcast, Episode and time range when possible.\n"
             "The transcripts include speaker IDs (e.g., Speaker 0, Speaker 1). Use this to distinguish who said what."
         )
         

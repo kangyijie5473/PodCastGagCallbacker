@@ -10,8 +10,9 @@ class SearchService:
         self.index_dir = index_dir
         self.indices = {} # Cache indices in memory for demo
 
-    def load_index(self, audio_id: str):
-        path = os.path.join(self.index_dir, audio_id)
+    def load_index(self, podcast_name: str, audio_id: str):
+        key = f"{podcast_name}/{audio_id}"
+        path = os.path.join(self.index_dir, podcast_name, audio_id)
         if not os.path.exists(path):
             return False
         
@@ -20,57 +21,81 @@ class SearchService:
         
         embs = np.load(os.path.join(path, "embeddings.npy"))
         
-        self.indices[audio_id] = {
+        self.indices[key] = {
             "windows": windows,
-            "embeddings": embs
+            "embeddings": embs,
+            "podcast": podcast_name,
+            "audio_id": audio_id
         }
         return True
 
-    def list_indices(self):
+    def list_indices(self) -> List[Dict[str, str]]:
+        # Returns list of {"podcast": ..., "audio_id": ...}
+        results = []
         if not os.path.exists(self.index_dir):
             return []
-        return [d for d in os.listdir(self.index_dir) if os.path.isdir(os.path.join(self.index_dir, d))]
+            
+        # Walk 1: Podcast Directories
+        for podcast_name in os.listdir(self.index_dir):
+            podcast_dir = os.path.join(self.index_dir, podcast_name)
+            if not os.path.isdir(podcast_dir):
+                continue
+                
+            # Walk 2: Audio Directories
+            for audio_id in os.listdir(podcast_dir):
+                audio_dir = os.path.join(podcast_dir, audio_id)
+                if os.path.isdir(audio_dir) and os.path.exists(os.path.join(audio_dir, "windows.json")):
+                    results.append({"podcast": podcast_name, "audio_id": audio_id})
+        return results
 
-    def search(self, query: str, audio_id: Optional[str] = None, top_k: int = 5):
-        # If audio_id is provided, search only that. Else search all loaded (or load all available).
+    def search(self, query: str, podcast_name: Optional[str] = None, audio_id: Optional[str] = None, top_k: int = 5):
+        # Target specific podcast or specific audio, or all
         
-        target_ids = []
-        if audio_id:
-            target_ids = [audio_id]
-        else:
-            # For demo, load all available indices if not specified
-            available = self.list_indices()
-            target_ids = available
+        target_indices = []
+        available = self.list_indices()
+        
+        for item in available:
+            # Filter by podcast if specified
+            if podcast_name and item["podcast"] != podcast_name:
+                continue
+            # Filter by audio_id if specified (must also match podcast if provided, or global uniqueness not guaranteed but here we assume podcast+audio_id is unique)
+            if audio_id and item["audio_id"] != audio_id:
+                continue
+            target_indices.append(item)
 
         # Ensure loaded
-        for aid in target_ids:
-            if aid not in self.indices:
-                self.load_index(aid)
+        for item in target_indices:
+            key = f"{item['podcast']}/{item['audio_id']}"
+            if key not in self.indices:
+                self.load_index(item['podcast'], item['audio_id'])
         
-        valid_targets = [aid for aid in target_ids if aid in self.indices]
-        if not valid_targets:
+        valid_keys = [f"{item['podcast']}/{item['audio_id']}" for item in target_indices if f"{item['podcast']}/{item['audio_id']}" in self.indices]
+        
+        if not valid_keys:
             return []
 
         q_emb = self.embed.encode([query], is_query=True)[0]
         
         results = []
-        for aid in valid_targets:
-            data = self.indices[aid]
+        for key in valid_keys:
+            data = self.indices[key]
             windows = data["windows"]
             embs = data["embeddings"]
+            p_name = data["podcast"]
+            a_id = data["audio_id"]
             
             # Cosine similarity
             scores = np.dot(embs, q_emb)
             
             # Get top K indices
-            # If K is larger than size, take all
             k = min(top_k, len(scores))
             top_indices = np.argsort(scores)[::-1][:k]
             
             for idx in top_indices:
                 results.append({
                     "score": float(scores[idx]),
-                    "audio_id": aid,
+                    "podcast": p_name,
+                    "audio_id": a_id,
                     "window": windows[idx]
                 })
         
