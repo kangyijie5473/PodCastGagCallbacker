@@ -96,6 +96,9 @@ class SearchService:
                     "score": float(scores[idx]),
                     "podcast": p_name,
                     "audio_id": a_id,
+                    "text": windows[idx]["text"],
+                    "start": windows[idx]["start"],
+                    "end": windows[idx]["end"],
                     "window": windows[idx]
                 })
         

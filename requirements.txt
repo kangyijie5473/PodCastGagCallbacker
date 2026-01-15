@@ -6,6 +6,9 @@ numpy
 openai
 python-dotenv
 requests
+fastapi
+uvicorn
+python-multipart
 tqdm
 feedparser
 openai

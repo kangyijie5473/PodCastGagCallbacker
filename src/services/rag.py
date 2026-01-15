@@ -61,9 +61,11 @@ class RAGService:
             
         return "\n".join(context_parts)
 
-    def answer(self, query: str, podcast_name: str = None, audio_id: str = None, top_k: int = 5) -> str:
-        # 1. Retrieve
-        results = self.searcher.search(query, podcast_name=podcast_name, audio_id=audio_id, top_k=top_k)
+    def answer(self, query: str, podcast_name: str = None, audio_id: str = None, top_k: int = 5, results: List[Dict] = None) -> str:
+        # 1. Retrieve (if not provided)
+        if results is None:
+            results = self.searcher.search(query, podcast_name=podcast_name, audio_id=audio_id, top_k=top_k)
+            
         if not results:
             return "No relevant podcast content found to answer your question."
 
