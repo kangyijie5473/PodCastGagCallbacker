@@ -12,7 +12,7 @@ from src.services.searcher import SearchService
 
 app = FastAPI(title="Podcast Search API")
 
-DATA_DIR = "data_v2"
+DATA_DIR = "data"
 embed_model = None
 search_service = None
 

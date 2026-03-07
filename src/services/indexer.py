@@ -49,8 +49,8 @@ class IndexingService:
         windows = self._create_windows(segments, window_size=window_size, stride=stride)
         
         # 3.1 Refine Windows with LLM (if enabled)
-        if self.llm:
-            windows = self._refine_windows(windows, progress_callback=lambda p, m: report(70 + int(p * 0.2), m))
+        # if self.llm:
+        #     windows = self._refine_windows(windows, progress_callback=lambda p, m: report(70 + int(p * 0.2), m))
 
         # 4. Embed Windows
         report(90, f"Embedding {len(windows)} windows...")

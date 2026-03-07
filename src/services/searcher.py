@@ -3,11 +3,16 @@ import json
 import numpy as np
 from typing import List, Dict, Any, Optional
 from src.models.base import EmbeddingModel
+try:
+    from src.models.reranker import RerankerModel
+except ImportError:
+    RerankerModel = None
 
 class SearchService:
-    def __init__(self, embed_model: EmbeddingModel, index_dir: str):
+    def __init__(self, embed_model: EmbeddingModel, index_dir: str, reranker: Optional[RerankerModel] = None):
         self.embed = embed_model
         self.index_dir = index_dir
+        self.reranker = reranker
         self.indices = {} # Cache indices in memory for demo
 
     def load_index(self, podcast_name: str, audio_id: str):
@@ -76,7 +81,11 @@ class SearchService:
 
         q_emb = self.embed.encode([query], is_query=True)[0]
         
-        results = []
+        # 1. First Pass: Vector Search (High Recall)
+        # If reranker is enabled, retrieve more candidates (e.g., top_k * 10)
+        initial_k = top_k * 10 if self.reranker else top_k
+        
+        candidates = []
         for key in valid_keys:
             data = self.indices[key]
             windows = data["windows"]
@@ -87,13 +96,14 @@ class SearchService:
             # Cosine similarity
             scores = np.dot(embs, q_emb)
             
-            # Get top K indices
-            k = min(top_k, len(scores))
+            # Get top K indices for this file
+            # We can be generous here since we will sort globally later
+            k = min(initial_k, len(scores))
             top_indices = np.argsort(scores)[::-1][:k]
             
             for idx in top_indices:
-                results.append({
-                    "score": float(scores[idx]),
+                candidates.append({
+                    "score": float(scores[idx]), # Vector score
                     "podcast": p_name,
                     "audio_id": a_id,
                     "text": windows[idx]["text"],
@@ -102,6 +112,22 @@ class SearchService:
                     "window": windows[idx]
                 })
         
-        # Sort combined results
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:top_k]
+        # Sort combined results by vector score
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        
+        # Keep only top initial_k candidates globally
+        candidates = candidates[:initial_k]
+        
+        # 2. Second Pass: Re-ranking (High Precision)
+        if self.reranker:
+            texts = [c["text"] for c in candidates]
+            if texts:
+                rerank_scores = self.reranker.rerank(query, texts)
+                for i, score in enumerate(rerank_scores):
+                    candidates[i]["vector_score"] = candidates[i]["score"] # Save vector score
+                    candidates[i]["score"] = score # Overwrite with reranker score
+                
+                # Re-sort by reranker score
+                candidates.sort(key=lambda x: x["score"], reverse=True)
+                
+        return candidates[:top_k]

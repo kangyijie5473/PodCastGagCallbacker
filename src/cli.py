@@ -3,7 +3,7 @@ import os
 import sys
 
 
-from src.models.funasr import LocalFunASR
+from src.models.faster_whisper_asr import FasterWhisperASR
 from src.models.embedding import LocalEmbedding
 from src.models.llm import OpenAILLM
 from src.services.indexer import IndexingService
@@ -15,8 +15,10 @@ from src.services.downloader import PodcastDownloader
 DATA_DIR = "data"
 
 def main():
-    os.environ["SSL_CERT_FILE"] = "/etc/ssl/cert.pem"
-    os.environ["REQUESTS_CA_BUNDLE"] = "/etc/ssl/cert.pem"
+    os.environ["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
+    os.environ["REQUESTS_CA_BUNDLE"] = "/etc/ssl/certs/ca-certificates.crt"
+    # Use Hugging Face Mirror if needed
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
     
     parser = argparse.ArgumentParser(description="Podcast Search Engine CLI")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -25,7 +27,7 @@ def main():
     proc_parser = subparsers.add_parser("process", help="Process audio file")
     proc_parser.add_argument("--audio_path", help="Path to audio file")
     proc_parser.add_argument("--id", help="Unique ID for the audio (default: filename)")
-    proc_parser.add_argument("--model-size", default="iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch", help="FunASR model ID")
+    proc_parser.add_argument("--model-size", default="large-v3", help="Faster Whisper model size")
     proc_parser.add_argument("--window-size", type=int, default=20, help="Window size in segments")
     proc_parser.add_argument("--stride", type=int, default=5, help="Window stride in segments")
     proc_parser.add_argument("--refine", action="store_true", help="Refine transcript with LLM")
@@ -76,13 +78,13 @@ def main():
 
         audio_id = args.id or os.path.splitext(os.path.basename(args.audio_path))[0]
         
-        print(f"Loading models (FunASR: {args.model_size}, Embedding: bge-small-zh-v1.5)...")
+        print(f"Loading models (Faster Whisper: {args.model_size}, Embedding: bge-small-zh-v1.5)...")
         # Initialize models
         llm = None
         if args.refine:
             llm = OpenAILLM(api_key=args.api_key, base_url=args.base_url, model=args.model)
             
-        asr = LocalFunASR(model_name=args.model_size)
+        asr = FasterWhisperASR(model_size=args.model_size)
         embed = LocalEmbedding()
         
         indexer = IndexingService(asr, embed, DATA_DIR, llm=llm)
@@ -128,16 +130,16 @@ def main():
 
         print(f"Syncing podcast '{args.name}' from {args.source}")
         
-        print(f"Loading models (FunASR, Embedding: bge-small-zh-v1.5)...")
+        print(f"Loading models (Faster Whisper, Embedding: bge-small-zh-v1.5)...")
         # Hardcoded best model for ingestion
-        model_size = "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+        model_size = "large-v3"
         
         llm = None
         if args.refine:
             print(f"Initializing LLM ({args.model}) for refinement...")
             llm = OpenAILLM(api_key=args.api_key, base_url=args.base_url, model=args.model)
 
-        asr = LocalFunASR(model_name=model_size)
+        asr = FasterWhisperASR(model_size=model_size)
         embed = LocalEmbedding()
         
         indexer = IndexingService(asr, embed, DATA_DIR, llm=llm)

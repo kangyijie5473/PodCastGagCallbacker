@@ -9,8 +9,12 @@ import uvicorn
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
-from src.models.funasr import LocalFunASR
+from src.models.faster_whisper_asr import FasterWhisperASR
 from src.models.embedding import LocalEmbedding
+try:
+    from src.models.reranker import RerankerModel
+except ImportError:
+    RerankerModel = None
 from src.models.llm import OpenAILLM
 from src.services.indexer import IndexingService
 from src.services.searcher import SearchService
@@ -27,8 +31,10 @@ services = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    os.environ["SSL_CERT_FILE"] = "/etc/ssl/cert.pem"
-    os.environ["REQUESTS_CA_BUNDLE"] = "/etc/ssl/cert.pem"
+    os.environ["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
+    os.environ["REQUESTS_CA_BUNDLE"] = "/etc/ssl/certs/ca-certificates.crt"
+    # Use Hugging Face Mirror if needed
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
     # Startup
     print("Loading models...")
     # Load environment variables
@@ -36,10 +42,19 @@ async def lifespan(app: FastAPI):
     
     # Initialize models
     # We use a default config for now
-    model_size = "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+    model_size = "large-v3"
     
-    asr = LocalFunASR(model_name=model_size)
+    asr = FasterWhisperASR(model_size=model_size)
     embed = LocalEmbedding()
+    
+    # Initialize Reranker
+    reranker = None
+    if RerankerModel:
+        try:
+            print("Initializing Reranker...")
+            reranker = RerankerModel()
+        except Exception as e:
+            print(f"Failed to initialize reranker: {e}")
     
     # Optional: Load LLM if env vars are present, or lazy load
     llm_api_key = os.getenv("LLM_API_KEY")
@@ -55,7 +70,7 @@ async def lifespan(app: FastAPI):
     
     indexer = IndexingService(asr, embed, DATA_DIR, llm=llm)
     collector = CollectorService(indexer)
-    searcher = SearchService(embed, DATA_DIR)
+    searcher = SearchService(embed, DATA_DIR, reranker=reranker)
     
     rag = None
     if llm:
@@ -262,4 +277,4 @@ def process_podcast_download(url: str, limit: int):
         print(f"Error downloading {url}: {e}")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=5473)

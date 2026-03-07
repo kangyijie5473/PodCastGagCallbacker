@@ -31,7 +31,7 @@
   - `CollectorService`: 辅助服务，用于管理已索引的数据集合。
 
 - **模型层 (Model Layer)**:
-  - `LocalFunASR`: 封装 FunASR 框架，集成 VAD（语音活动检测）、ASR（识别）、Punc（标点恢复）及 Cam++（声纹识别）。
+  - `FasterWhisperASR`: 封装 Faster Whisper 框架进行 ASR，集成 Pyannote.audio 进行说话人分离。
   - `LocalEmbedding`: 封装本地 Embedding 模型（如 BGE-Small）。
   - `OpenAILLM`: 封装 OpenAI 兼容格式的 LLM 接口。
 
