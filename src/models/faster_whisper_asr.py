@@ -84,12 +84,10 @@ class FasterWhisperASR(ASRModel):
                 print("and set the HF_TOKEN environment variable.")
             self.diarization_pipeline = None
 
-    def _convert_to_mono_16k(self, input_path: str, output_path: str):
-        """Convert audio to 16kHz mono WAV using ffmpeg."""
+    def _convert_to_wav(self, input_path: str, output_path: str):
+        """Convert audio to WAV using ffmpeg (simple conversion)."""
         cmd = [
             "ffmpeg", "-y", "-i", input_path,
-            "-ar", "16000", "-ac", "1",
-            "-c:a", "pcm_s16le",
             output_path
         ]
         # Run ffmpeg quietly
@@ -116,12 +114,12 @@ class FasterWhisperASR(ASRModel):
         
         # Ensure 16k mono WAV exists for Pyannote/SoundFile compatibility
         # (SoundFile often fails on MP4/AAC, so we convert to WAV)
-        wav_path = os.path.join(debug_dir, f"{base_name}.mono.wav")
+        wav_path = os.path.join(debug_dir, f"{base_name}.wav")
         converted = False
         
         try:
-            print(f"Ensuring 16kHz Mono WAV format -> {wav_path}...")
-            self._convert_to_mono_16k(audio_path, wav_path)
+            print(f"Ensuring WAV format -> {wav_path}...")
+            self._convert_to_wav(audio_path, wav_path)
             converted = True
         except Exception as e:
             print(f"Conversion failed, trying original file: {e}")
