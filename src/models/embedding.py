@@ -6,9 +6,9 @@ import numpy as np
 import os
 
 class LocalEmbedding(EmbeddingModel):
-    def __init__(self, model_name="BAAI/bge-small-zh-v1.5"):
+    def __init__(self, model_name="BAAI/bge-base-zh-v1.5"):
         # Check if local model exists
-        local_path = os.path.join(os.getcwd(), "models_cache", "bge-small-zh-v1.5")
+        local_path = os.path.join(os.getcwd(), "models_cache", "bge-base-zh-v1.5")
         if os.path.exists(local_path):
             print(f"Loading embedding model from local path: {local_path}")
             self.model_name = local_path
