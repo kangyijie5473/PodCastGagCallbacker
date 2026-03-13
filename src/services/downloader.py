@@ -14,13 +14,13 @@ class PodcastDownloader:
         if not os.path.exists(download_dir):
             os.makedirs(download_dir)
 
-    def download(self, url: str, limit: int = 0):
+    def download(self, url: str, limit: int = 0, metadata_only: bool = False):
         if "xiaoyuzhoufm.com" in url:
-            self._download_xiaoyuzhou(url, limit)
+            self._download_xiaoyuzhou(url, limit, metadata_only)
         else:
-            self._download_rss(url, limit)
+            self._download_rss(url, limit, metadata_only)
 
-    def _download_xiaoyuzhou(self, url: str, limit: int):
+    def _download_xiaoyuzhou(self, url: str, limit: int, metadata_only: bool):
         print(f"Detected XiaoYuZhou URL: {url}")
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -36,10 +36,19 @@ class PodcastDownloader:
 
             data = json.loads(match.group(1))
             props = data.get('props', {}).get('pageProps', {})
-            podcast = props.get('podcast', {})
             
-            title = podcast.get('title', 'Unknown_Podcast')
-            episodes = podcast.get('episodes', [])
+            # Check if it's an episode page or podcast page
+            episode = props.get('episode')
+            podcast = props.get('podcast', {})
+            episodes = []
+            
+            if episode:
+                print("Detected Single Episode Page.")
+                title = episode.get("podcast", {}).get("title", "Unknown_Podcast")
+                episodes = [episode]
+            else:
+                title = podcast.get('title', 'Unknown_Podcast')
+                episodes = podcast.get('episodes', [])
             
             print(f"Podcast Title: {title}")
             print(f"Found {len(episodes)} episodes.")
@@ -48,12 +57,12 @@ class PodcastDownloader:
                 episodes = episodes[:limit]
                 print(f"Limiting to latest {limit} episodes.")
 
-            self._process_episodes(title, episodes, is_xyz=True)
+            self._process_episodes(title, episodes, is_xyz=True, metadata_only=metadata_only)
             
         except Exception as e:
             print(f"Error downloading from XiaoYuZhou: {e}")
 
-    def _download_rss(self, url: str, limit: int):
+    def _download_rss(self, url: str, limit: int, metadata_only: bool):
         print(f"Parsing RSS Feed: {url}")
         try:
             feed = feedparser.parse(url, agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -76,9 +85,9 @@ class PodcastDownloader:
             entries = entries[:limit]
             print(f"Limiting to latest {limit} episodes.")
             
-        self._process_episodes(podcast_title, entries, is_xyz=False)
+        self._process_episodes(podcast_title, entries, is_xyz=False, metadata_only=metadata_only)
 
-    def _process_episodes(self, podcast_title: str, episodes: List[any], is_xyz: bool):
+    def _process_episodes(self, podcast_title: str, episodes: List[any], is_xyz: bool, metadata_only: bool = False):
         # Create safe directory name
         safe_title = "".join([c for c in podcast_title if c.isalnum() or c in (' ', '-', '_')]).strip()
         safe_title = safe_title.replace(" ", "_")
@@ -89,10 +98,25 @@ class PodcastDownloader:
         success_count = 0
         
         for entry in episodes:
+            metadata = {}
             if is_xyz:
                 title = entry.get("title", "Untitled")
                 audio_url = entry.get("enclosure", {}).get("url")
                 pub_date_str = entry.get("pubDate") # ISO string likely
+                
+                # Extract metadata
+                metadata = {
+                    "source": "xiaoyuzhou",
+                    "title": title,
+                    "podcast": podcast_title,
+                    "description": entry.get("description", ""),
+                    "shownotes": entry.get("shownotes", ""), # XYZ specific
+                    "image": entry.get("image", {}).get("middleUrl") or entry.get("image", {}).get("smallUrl"),
+                    "duration": entry.get("duration", 0),
+                    "pubDate": pub_date_str,
+                    "link": entry.get("link", "")
+                }
+                
                 # XYZ pubDate is usually ISO 8601
                 date_str = "00000000"
                 if pub_date_str:
@@ -118,6 +142,22 @@ class PodcastDownloader:
                 date_str = "00000000"
                 if published:
                     date_str = f"{published.tm_year:04d}{published.tm_mon:02d}{published.tm_mday:02d}"
+                
+                # Extract metadata
+                content = ""
+                if "content" in entry:
+                    content = entry.content[0].value
+                elif "summary" in entry:
+                    content = entry.summary
+                    
+                metadata = {
+                    "source": "rss",
+                    "title": title,
+                    "podcast": podcast_title,
+                    "description": content,
+                    "link": entry.get("link", ""),
+                    "duration": entry.get("itunes_duration", 0)
+                }
 
             if not audio_url:
                 print(f"[SKIP] '{title}': No audio source found.")
@@ -135,6 +175,18 @@ class PodcastDownloader:
                 
             filename = f"{date_str}_{safe_ep_title}{ext}"
             filepath = os.path.join(podcast_dir, filename)
+            meta_filepath = filepath + ".meta.json"
+            
+            # Save metadata
+            try:
+                with open(meta_filepath, "w", encoding="utf-8") as f:
+                    json.dump(metadata, f, ensure_ascii=False, indent=2)
+                if metadata_only:
+                    print(f"[METADATA ONLY] Saved metadata for '{title}'")
+                    success_count += 1
+                    continue
+            except Exception as e:
+                print(f"Failed to save metadata for {title}: {e}")
             
             if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
                 print(f"[SKIP] '{title}': File exists.")
@@ -143,6 +195,7 @@ class PodcastDownloader:
             print(f"[DOWNLOADING] '{title}'...")
             if self._download_file(audio_url, filepath):
                 success_count += 1
+
                 
         print("-" * 40)
         print(f"Download complete. Downloaded: {success_count} files.")
