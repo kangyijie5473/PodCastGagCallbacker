@@ -93,6 +93,11 @@ class SearchService:
             p_name = data["podcast"]
             a_id = data["audio_id"]
             
+            # Check dimension match
+            if embs.shape[1] != q_emb.shape[0]:
+                print(f"Warning: Dimension mismatch for {p_name}/{a_id}. Index: {embs.shape[1]}, Query: {q_emb.shape[0]}. Skipping.")
+                continue
+
             # Cosine similarity
             scores = np.dot(embs, q_emb)
             
