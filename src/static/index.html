@@ -384,17 +384,20 @@
                     const timeEnd = meta.end ? meta.end.toFixed(1) : '0.0';
                     const podcast = meta.podcast || 'Unknown Podcast';
                     const episode = meta.audio_id || 'Unknown Episode';
-                    const audioUrl = `/api/audio/${podcast}/${episode}?start=${timeStart}`;
+                    const audioUrl = `/api/audio/${podcast}/${episode}`;
+                    // Use Media Fragments URI for seeking: #t=start,end
+                    // Browser handles this natively for HTML5 Audio
+                    const playUrl = `${audioUrl}#t=${timeStart},${timeEnd}`;
                     
                     card.innerHTML = `
                         <div class="result-meta">
-                            <span>${podcast} • ${episode} • ${timeStart}s - ${timeEnd}s</span>
-                            <button class="play-btn" onclick="playAudio('${audioUrl}')">
+                            <span style="font-weight: 500; font-size: 1rem; color: #fff;">${podcast} - ${episode}</span>
+                            <span style="color: var(--accent-color); font-family: monospace;">[${timeStart}s - ${timeEnd}s]</span>
+                            <button class="play-btn" onclick="playAudio('${playUrl}')">
                                 <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Play Clip
                             </button>
                         </div>
-                        <div class="result-text">${topResult.text}</div>
-                        <audio id="audioPlayer" style="width:100%; margin-top:10px; display:none;" controls></audio>
+                        <audio id="audioPlayer" style="width:100%; margin-top:15px; display:none;" controls></audio>
                     `;
                     resultsList.appendChild(card);
                     
