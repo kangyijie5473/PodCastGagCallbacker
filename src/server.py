@@ -4,6 +4,8 @@ import asyncio
 from typing import Optional, List
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 from contextlib import asynccontextmanager
@@ -98,6 +100,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+@app.get("/")
+async def root():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 # Models
 class SearchRequest(BaseModel):
@@ -211,6 +220,28 @@ async def list_podcasts():
     
     return list(podcasts.values())
 
+@app.get("/api/audio/{podcast_name}/{audio_id}")
+async def get_audio(podcast_name: str, audio_id: str):
+    # Only serve from Downloads directory
+    # Structure: downloads/{podcast_name}/{filename}
+    # The audio_id is typically the filename without extension.
+    
+    podcast_dir = os.path.join(DOWNLOAD_DIR, podcast_name)
+    if os.path.exists(podcast_dir):
+        for f in os.listdir(podcast_dir):
+            # Check if file starts with audio_id and is an audio/video file (not json/txt)
+            if f.startswith(audio_id) and not f.endswith(".json") and not f.endswith(".txt"):
+                file_path = os.path.join(podcast_dir, f)
+                # Determine media type roughly
+                media_type = "audio/mp4" # Default fallback
+                if f.endswith(".mp3"): media_type = "audio/mpeg"
+                elif f.endswith(".wav"): media_type = "audio/wav"
+                elif f.endswith(".m4a"): media_type = "audio/mp4"
+                
+                return FileResponse(file_path, media_type=media_type)
+
+    raise HTTPException(status_code=404, detail=f"Audio file not found in downloads/{podcast_name}")
+
 # Background Tasks
 
 def process_upload(file_path: str, podcast_name: str, task_id: str):
@@ -277,4 +308,4 @@ def process_podcast_download(url: str, limit: int):
         print(f"Error downloading {url}: {e}")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=5473)
+    uvicorn.run(app, host="0.0.0.0", port=5473)

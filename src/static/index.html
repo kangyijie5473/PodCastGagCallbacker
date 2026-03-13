@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Podcast Search Engine</title>
+    <style>
+        :root {
+            --bg-color: #0f0f12;
+            --text-color: #e0e0e0;
+            --accent-color: #00ff9d; /* Neon Green */
+            --secondary-accent: #00f3ff; /* Electric Blue */
+            --card-bg: #1a1a1f;
+            --input-bg: #25252b;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            padding: 20px;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+
+        .header {
+            text-align: center;
+            margin-top: 15vh;
+            transition: margin-top 0.5s ease;
+        }
+
+        body.has-results .header {
+            margin-top: 20px;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, var(--accent-color), var(--secondary-accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1px;
+        }
+
+        .search-box {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 15px 20px;
+            font-size: 1.2rem;
+            background-color: var(--input-bg);
+            border: 2px solid transparent;
+            border-radius: 30px;
+            color: white;
+            outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            box-sizing: border-box;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 15px rgba(0, 255, 157, 0.3);
+        }
+
+        .search-btn {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: linear-gradient(135deg, var(--accent-color), var(--secondary-accent));
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+
+        .search-btn:hover {
+            transform: translateY(-50%) scale(1.1);
+        }
+
+        .search-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: #0f0f12;
+        }
+
+        .options {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .toggle-switch input {
+            display: none;
+        }
+
+        .slider {
+            width: 36px;
+            height: 20px;
+            background-color: #333;
+            border-radius: 20px;
+            position: relative;
+            margin-right: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .slider::before {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background-color: white;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked + .slider::before {
+            transform: translateX(16px);
+        }
+
+        /* Results Area */
+        .results-container {
+            width: 100%;
+            max-width: 800px;
+            margin-top: 40px;
+            display: none; /* Hidden by default */
+            opacity: 0;
+            animation: fadeIn 0.5s forwards;
+        }
+
+        body.has-results .results-container {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        .ai-answer {
+            background: linear-gradient(180deg, rgba(0, 255, 157, 0.05) 0%, rgba(15, 15, 18, 0) 100%);
+            border-left: 4px solid var(--accent-color);
+            padding: 20px;
+            border-radius: 0 10px 10px 0;
+            margin-bottom: 30px;
+            line-height: 1.6;
+            font-size: 1.1rem;
+        }
+        
+        .ai-answer h3 {
+            margin-top: 0;
+            color: var(--accent-color);
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .result-card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: transform 0.2s, background-color 0.2s;
+            cursor: pointer;
+            border: 1px solid #2a2a30;
+        }
+
+        .result-card:hover {
+            transform: translateY(-2px);
+            background-color: #222229;
+            border-color: #3a3a40;
+        }
+
+        .result-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        .play-btn {
+            background-color: var(--accent-color);
+            color: #0f0f12;
+            border: none;
+            border-radius: 20px;
+            padding: 5px 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .play-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px rgba(0, 255, 157, 0.4);
+        }
+
+        .play-btn svg {
+            width: 12px;
+            height: 12px;
+            fill: #0f0f12;
+        }
+
+        .result-score {
+            display: none; /* Hide match score */
+        }
+
+        .result-text {
+            line-height: 1.5;
+            color: #ccc;
+        }
+
+        .loading {
+            display: none;
+            margin-top: 20px;
+            color: var(--accent-color);
+        }
+        
+        .loader-dots span {
+            animation: dots 1.5s infinite;
+            opacity: 0;
+        }
+        
+        .loader-dots span:nth-child(1) { animation-delay: 0.0s; }
+        .loader-dots span:nth-child(2) { animation-delay: 0.5s; }
+        .loader-dots span:nth-child(3) { animation-delay: 1.0s; }
+        
+        @keyframes dots {
+            0% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Podcast Search</h1>
+    </div>
+
+    <div class="container">
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Ask anything about the podcasts..." autocomplete="off">
+            <button class="search-btn" onclick="performSearch()">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            </button>
+        </div>
+
+        <div class="options">
+            <label class="toggle-switch">
+                <input type="checkbox" id="ragToggle" checked>
+                <span class="slider"></span>
+                <span>AI Answer (RAG)</span>
+            </label>
+            <!-- Optional: Model selection dropdown could go here -->
+        </div>
+
+        <div class="loading" id="loading">
+            Searching<span class="loader-dots"><span>.</span><span>.</span><span>.</span></span>
+        </div>
+
+        <div class="results-container" id="resultsContainer">
+            <div id="aiAnswer" class="ai-answer" style="display: none;">
+                <h3>AI Answer</h3>
+                <div id="aiAnswerText"></div>
+            </div>
+
+            <div id="resultsList">
+                <!-- Results will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const ragToggle = document.getElementById('ragToggle');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const aiAnswerDiv = document.getElementById('aiAnswer');
+        const aiAnswerText = document.getElementById('aiAnswerText');
+        const resultsList = document.getElementById('resultsList');
+        const loading = document.getElementById('loading');
+
+        searchInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+
+        async function performSearch() {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            // UI Updates
+            document.body.classList.add('has-results');
+            loading.style.display = 'block';
+            resultsContainer.style.display = 'none';
+            resultsList.innerHTML = '';
+            aiAnswerDiv.style.display = 'none';
+            aiAnswerText.innerHTML = '';
+
+            const useRag = ragToggle.checked;
+
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        use_rag: useRag,
+                        top_k: 5
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Search failed');
+                }
+
+                const data = await response.json();
+                
+                // Render AI Answer
+                if (data.answer) {
+                    aiAnswerDiv.style.display = 'block';
+                    // Simple markdown-like parsing for bolding
+                    aiAnswerText.innerHTML = data.answer.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+                }
+
+                // Render Search Results
+                if (data.results && data.results.length > 0) {
+                    // Show only the top result if RAG is enabled, or maybe first 3?
+                    // User request: "只需要展示一个答案" (Show only one answer/result context)
+                    // But usually RAG answer is the main thing.
+                    // Let's interpret "show only one answer" as showing the AI Answer primarily,
+                    // and maybe the single most relevant source clip below it.
+                    
+                    const topResult = data.results[0];
+                    const card = document.createElement('div');
+                    card.className = 'result-card';
+                    
+                    const meta = topResult.metadata || {};
+                    const timeStart = meta.start ? meta.start.toFixed(1) : '0.0';
+                    const timeEnd = meta.end ? meta.end.toFixed(1) : '0.0';
+                    const podcast = meta.podcast || 'Unknown Podcast';
+                    const episode = meta.audio_id || 'Unknown Episode';
+                    const audioUrl = `/api/audio/${podcast}/${episode}?start=${timeStart}`;
+                    
+                    card.innerHTML = `
+                        <div class="result-meta">
+                            <span>${podcast} • ${episode} • ${timeStart}s - ${timeEnd}s</span>
+                            <button class="play-btn" onclick="playAudio('${audioUrl}')">
+                                <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Play Clip
+                            </button>
+                        </div>
+                        <div class="result-text">${topResult.text}</div>
+                        <audio id="audioPlayer" style="width:100%; margin-top:10px; display:none;" controls></audio>
+                    `;
+                    resultsList.appendChild(card);
+                    
+                } else {
+                    resultsList.innerHTML = '<div style="text-align:center; color: #666;">No relevant clips found.</div>';
+                }
+
+                resultsContainer.style.display = 'block';
+
+            } catch (error) {
+                console.error(error);
+                resultsList.innerHTML = `<div style="color: #ff4444; text-align:center;">Error: ${error.message}</div>`;
+                resultsContainer.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function playAudio(url) {
+            const player = document.getElementById('audioPlayer');
+            if (player) {
+                // Remove existing source if any
+                player.innerHTML = '';
+                player.src = url;
+                player.style.display = 'block';
+                player.load(); // Reload to apply new source
+                player.play().catch(e => console.error("Playback failed:", e));
+            }
+        }
+    </script>
+</body>
+</html>

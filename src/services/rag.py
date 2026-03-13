@@ -12,51 +12,70 @@ class RAGService:
 
     def _get_segments(self, podcast_name: str, audio_id: str) -> List[Dict]:
         key = f"{podcast_name}/{audio_id}"
-        if key in self.segments_cache:
-            return self.segments_cache[key]
+        # ... (caching logic)
         
         # Path: data/{podcast_name}/{audio_id}/segments.json
+        # Handle cases where index_dir might be missing
+        if not self.searcher.index_dir:
+            return []
+            
         path = os.path.join(self.searcher.index_dir, podcast_name, audio_id, "segments.json")
         if not os.path.exists(path):
             return []
             
-        with open(path, "r", encoding="utf-8") as f:
-            segments = json.load(f)
-            
-        self.segments_cache[key] = segments
-        return segments
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                segments = json.load(f)
+            return segments
+        except Exception:
+            return []
 
     def _format_context(self, results: List[Dict]) -> str:
         context_parts = []
         for i, res in enumerate(results):
-            podcast = res.get("podcast", "Unknown")
-            audio_id = res["audio_id"]
-            window = res["window"]
-            score = res["score"]
+            # Extract metadata safely
+            meta = res.get("metadata", {})
+            podcast = meta.get("podcast", "Unknown")
+            audio_id = meta.get("audio_id", "Unknown")
+            start_t = meta.get("start", 0.0)
+            end_t = meta.get("end", 0.0)
+            score = res.get("score", 0.0)
             
-            # Try to get detailed segments if available
-            indices = window.get("segment_indices")
-            formatted_content = ""
+            # Text content
+            formatted_content = res.get("text", "")
             
-            if indices:
-                start_idx, end_idx = indices
-                all_segments = self._get_segments(podcast, audio_id)
-                if all_segments:
-                    chunk_segments = all_segments[start_idx:end_idx]
-                    lines = []
-                    for seg in chunk_segments:
-                        spk = seg.get("speaker", "?")
-                        text = seg.get("text", "")
-                        start = seg.get("start", 0)
-                        lines.append(f"[{start:.1f}s] Speaker {spk}: {text}")
-                    formatted_content = "\n".join(lines)
+            # Try to load detailed segments if window_id is available
+            # We need to know which window index this corresponds to in windows.json
+            # The searcher now returns 'window_id' which is the index in windows.json
+            window_idx = res.get("window_id")
             
-            # Fallback to window text if segments loading failed
-            if not formatted_content:
-                formatted_content = window["text"]
+            if window_idx is not None:
+                # Load windows.json to get segment indices
+                try:
+                    windows_path = os.path.join(self.searcher.index_dir, podcast, audio_id, "windows.json")
+                    if os.path.exists(windows_path):
+                        with open(windows_path, "r", encoding="utf-8") as f:
+                            windows = json.load(f)
+                        
+                        if 0 <= window_idx < len(windows):
+                            window = windows[window_idx]
+                            indices = window.get("segment_indices")
+                            
+                            if indices:
+                                start_idx, end_idx = indices
+                                all_segments = self._get_segments(podcast, audio_id)
+                                if all_segments:
+                                    chunk_segments = all_segments[start_idx:end_idx]
+                                    lines = []
+                                    for seg in chunk_segments:
+                                        spk = seg.get("speaker", "?")
+                                        text = seg.get("text", "")
+                                        # start = seg.get("start", 0)
+                                        lines.append(f"Speaker {spk}: {text}")
+                                    formatted_content = "\n".join(lines)
+                except Exception as e:
+                    print(f"Error loading details for context: {e}")
 
-            start_t = window.get("start", 0.0)
-            end_t = window.get("end", 0.0)
             context_parts.append(f"Fragment {i+1} (Podcast: {podcast}, Episode: {audio_id}, Time: {start_t:.1f}-{end_t:.1f}s, Score: {score:.4f}):\n{formatted_content}\n")
             
         return "\n".join(context_parts)
