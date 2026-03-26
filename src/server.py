@@ -58,17 +58,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Failed to initialize reranker: {e}")
     
-    # Optional: Load LLM if env vars are present, or lazy load
-    llm_api_key = os.getenv("LLM_API_KEY")
-    llm_base_url = os.getenv("LLM_BASE_URL")
-    llm_model = os.getenv("LLM_MODEL", "doubao-seed-1-8-251228")
-    
+    llm_base_url = os.getenv("LLM_BASE_URL", "http://127.0.0.1:8000/v1")
     llm = None
-    if llm_api_key:
-        print(f"Initializing LLM ({llm_model})...")
-        llm = OpenAILLM(api_key=llm_api_key, base_url=llm_base_url, model=llm_model)
-    else:
-        print("WARNING: LLM_API_KEY not found. RAG and Refine features will be disabled.")
+    try:
+        llm = OpenAILLM(api_key=None, base_url=llm_base_url, model=None)
+        print(f"LLM initialized at {llm_base_url}")
+    except Exception as e:
+        print(f"Failed to initialize local LLM: {e}")
+        llm = None
     
     indexer = IndexingService(asr, embed, DATA_DIR, llm=llm)
     collector = CollectorService(indexer)
@@ -119,6 +116,9 @@ class SearchRequest(BaseModel):
 class PodcastLinkRequest(BaseModel):
     url: str
     limit: int = 0
+
+class IngestDirectoryRequest(BaseModel):
+    source: str
 
 class SearchResponse(BaseModel):
     results: List[dict]
@@ -198,6 +198,22 @@ async def submit_podcast(
 ):
     background_tasks.add_task(process_podcast_download, req.url, req.limit)
     return {"status": "success", "message": "Podcast download started"}
+
+@app.post("/api/ingest")
+async def ingest_directory(req: IngestDirectoryRequest):
+    source = os.path.abspath(req.source)
+    if not os.path.isdir(source):
+        raise HTTPException(status_code=400, detail=f"Source directory not found: {source}")
+
+    podcast_name = os.path.basename(os.path.normpath(source)) or "default"
+    collector = services["collector"]
+    collector.sync_podcast(source, podcast_name)
+    return {
+        "status": "success",
+        "message": "Directory processed",
+        "source": source,
+        "podcast_name": podcast_name
+    }
 
 @app.get("/api/podcasts")
 async def list_podcasts():
