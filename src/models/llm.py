@@ -18,7 +18,7 @@ class OpenAILLM(LLMModel):
         # Try to get from env if not provided
         self.api_key = api_key or os.getenv("LLM_API_KEY")
         self.base_url = base_url or os.getenv("LLM_BASE_URL")
-        self.model = model or os.getenv("LLM_MODEL", "doubao-seed-1-8-251228")
+        self.model = model or os.getenv("LLM_MODEL", "../mle_train/deepseek-14B-awq/")
         if not self.api_key:
              # If no key, we might be using a local server that doesn't strictly require one,
              # but OpenAI client usually wants something.
