@@ -1,8 +1,6 @@
 import os
-import shutil
-import asyncio
 from typing import Optional, List
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -25,7 +23,6 @@ from src.services.collector import CollectorService
 from src.services.downloader import PodcastDownloader
 
 DATA_DIR = "data"
-UPLOAD_DIR = "uploads"
 DOWNLOAD_DIR = "downloads"
 
 # Global services
@@ -118,7 +115,7 @@ class PodcastLinkRequest(BaseModel):
     limit: int = 0
 
 class IngestDirectoryRequest(BaseModel):
-    source: str
+    source: Optional[str] = None
 
 class SearchResponse(BaseModel):
     results: List[dict]
@@ -147,50 +144,6 @@ async def search(req: SearchRequest):
         results = searcher.search(req.query, podcast_name=req.podcast_name, audio_id=req.audio_id, top_k=req.top_k)
         return {"results": results, "answer": None}
 
-import uuid
-
-# Global tasks store
-tasks = {}
-
-@app.get("/api/tasks/{task_id}")
-async def get_task_status(task_id: str):
-    if task_id not in tasks:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return tasks[task_id]
-
-@app.post("/api/upload")
-async def upload_audio(
-    file: UploadFile = File(...), 
-    background_tasks: BackgroundTasks = None
-):
-    # Save file
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # Create task
-    task_id = str(uuid.uuid4())
-    tasks[task_id] = {
-        "id": task_id,
-        "status": "pending",
-        "progress": 0,
-        "message": "Queued",
-        "filename": file.filename
-    }
-        
-    # Trigger ingestion in background
-    # For user uploads, we can use "user_uploads" as podcast_name
-    background_tasks.add_task(process_upload, file_path, "user_uploads", task_id)
-    
-    return {
-        "status": "success", 
-        "message": "File uploaded and processing started", 
-        "filename": file.filename,
-        "task_id": task_id
-    }
-
 @app.post("/api/podcast/submit")
 async def submit_podcast(
     req: PodcastLinkRequest,
@@ -201,18 +154,29 @@ async def submit_podcast(
 
 @app.post("/api/ingest")
 async def ingest_directory(req: IngestDirectoryRequest):
-    source = os.path.abspath(req.source)
+    source = os.path.abspath(req.source or DOWNLOAD_DIR)
     if not os.path.isdir(source):
         raise HTTPException(status_code=400, detail=f"Source directory not found: {source}")
 
-    podcast_name = os.path.basename(os.path.normpath(source)) or "default"
     collector = services["collector"]
-    collector.sync_podcast(source, podcast_name)
+    processed = []
+    default_downloads = os.path.abspath(DOWNLOAD_DIR)
+
+    if source == default_downloads:
+        for podcast_name in sorted(os.listdir(source)):
+            full_path = os.path.join(source, podcast_name)
+            if os.path.isdir(full_path):
+                collector.sync_podcast(full_path, podcast_name)
+                processed.append({"podcast_name": podcast_name, "source": full_path})
+    else:
+        podcast_name = os.path.basename(os.path.normpath(source)) or "default"
+        collector.sync_podcast(source, podcast_name)
+        processed.append({"podcast_name": podcast_name, "source": source})
+
     return {
         "status": "success",
         "message": "Directory processed",
-        "source": source,
-        "podcast_name": podcast_name
+        "processed": processed
     }
 
 @app.get("/api/podcasts")
@@ -257,31 +221,6 @@ async def get_audio(podcast_name: str, audio_id: str):
                 return FileResponse(file_path, media_type=media_type)
 
     raise HTTPException(status_code=404, detail=f"Audio file not found in downloads/{podcast_name}")
-
-# Background Tasks
-
-def process_upload(file_path: str, podcast_name: str, task_id: str):
-    print(f"Processing upload: {file_path}")
-    indexer = services["indexer"]
-    audio_id = os.path.splitext(os.path.basename(file_path))[0]
-    
-    tasks[task_id]["status"] = "processing"
-    tasks[task_id]["message"] = "Starting..."
-    
-    def update_progress(p, msg):
-        tasks[task_id]["progress"] = p
-        tasks[task_id]["message"] = msg
-    
-    try:
-        indexer.process_audio(file_path, audio_id, podcast_name=podcast_name, progress_callback=update_progress)
-        tasks[task_id]["status"] = "completed"
-        tasks[task_id]["progress"] = 100
-        tasks[task_id]["message"] = "Done"
-        print(f"Finished processing {file_path}")
-    except Exception as e:
-        tasks[task_id]["status"] = "error"
-        tasks[task_id]["message"] = str(e)
-        print(f"Error processing {file_path}: {e}")
 
 def process_podcast_download(url: str, limit: int):
     print(f"Downloading podcast from {url}")

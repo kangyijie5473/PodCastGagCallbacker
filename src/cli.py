@@ -1,7 +1,6 @@
 import argparse
 import os
 import sys
-import time
 import requests
 
 # Add project root to sys.path
@@ -27,9 +26,8 @@ def main():
     search_parser.add_argument("--id", help="Audio ID to search in (optional)")
     
     # Ingest Command (API)
-    ingest_parser = subparsers.add_parser("ingest", help="Submit a directory for server-side processing")
-    ingest_parser.add_argument("--source", required=True, help="Directory path to process")
-    ingest_parser.add_argument("--server", default=DEFAULT_SERVER_URL, help="API Server URL")
+    ingest_parser = subparsers.add_parser("ingest", help="Process local directory via server")
+    ingest_parser.add_argument("--source", default="downloads", help="Directory path to process")
     
     # Download Command (Local)
     download_parser = subparsers.add_parser("download", help="Download podcast from URL (RSS or XiaoYuZhou)")
@@ -85,56 +83,21 @@ def main():
             print(f"Error during search: {e}")
 
     elif args.command == "ingest":
-        if not os.path.isdir(args.source):
-            print(f"Error: Source directory {args.source} does not exist.")
+        source = os.path.abspath(args.source)
+        if not os.path.isdir(source):
+            print(f"Error: Source directory {source} does not exist.")
             return
-
-        supported_extensions = {".mp3", ".wav", ".m4a", ".mp4", ".flac"}
-        audio_files = []
-        for root, _, filenames in os.walk(args.source):
-            for filename in filenames:
-                ext = os.path.splitext(filename)[1].lower()
-                if ext in supported_extensions:
-                    audio_files.append(os.path.join(root, filename))
-
-        if not audio_files:
-            print(f"No supported audio files found in {args.source}")
-            return
-
-        upload_url = f"{args.server}/api/upload"
-        tasks_url = f"{args.server}/api/tasks"
-        submitted = []
+        ingest_url = f"{DEFAULT_SERVER_URL}/api/ingest"
+        payload = {"source": source}
 
         try:
-            print(f"Found {len(audio_files)} audio file(s), uploading to {upload_url}...")
-            for audio_path in audio_files:
-                with open(audio_path, "rb") as f:
-                    files = {"file": (os.path.basename(audio_path), f)}
-                    resp = requests.post(upload_url, files=files, timeout=120)
-                    resp.raise_for_status()
-                    data = resp.json()
-                    task_id = data.get("task_id")
-                    submitted.append((audio_path, task_id))
-                    print(f"Uploaded: {audio_path} -> task {task_id}")
-
-            for audio_path, task_id in submitted:
-                if not task_id:
-                    print(f"Task not returned for {audio_path}")
-                    continue
-                status = "pending"
-                while status in {"pending", "processing"}:
-                    resp = requests.get(f"{tasks_url}/{task_id}", timeout=30)
-                    resp.raise_for_status()
-                    task = resp.json()
-                    status = task.get("status", "unknown")
-                    progress = task.get("progress", 0)
-                    message = task.get("message", "")
-                    print(f"[{status}] {os.path.basename(audio_path)} {progress}% {message}")
-                    if status in {"pending", "processing"}:
-                        time.sleep(60)
-
+            print(f"Sending request to {ingest_url}...")
+            resp = requests.post(ingest_url, json=payload, timeout=3600)
+            resp.raise_for_status()
+            data = resp.json()
+            print("Ingest result:", data)
         except requests.exceptions.ConnectionError:
-            print(f"Error: Could not connect to server at {args.server}. Is it running?")
+            print(f"Error: Could not connect to server at {DEFAULT_SERVER_URL}. Is it running?")
         except Exception as e:
             print(f"Error during ingest: {e}")
 
