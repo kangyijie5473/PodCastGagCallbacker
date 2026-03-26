@@ -18,17 +18,22 @@ class RAGService:
         # Handle cases where index_dir might be missing
         if not self.searcher.index_dir:
             return []
-            
-        path = os.path.join(self.searcher.index_dir, podcast_name, audio_id, "segments.json")
-        if not os.path.exists(path):
-            return []
-            
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                segments = json.load(f)
-            return segments
-        except Exception:
-            return []
+        base_dir = os.path.join(self.searcher.index_dir, podcast_name, audio_id)
+        candidates = [
+            os.path.join(base_dir, "llm_segements.json"),
+            os.path.join(base_dir, "segments.json")
+        ]
+        for path in candidates:
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    segments = json.load(f)
+                if isinstance(segments, list):
+                    return segments
+            except Exception:
+                continue
+        return []
 
     def _format_context(self, results: List[Dict]) -> str:
         context_parts = []
