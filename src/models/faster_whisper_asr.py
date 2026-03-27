@@ -4,6 +4,7 @@ import warnings
 import soundfile as sf
 import subprocess
 import numpy as np
+import traceback
 from typing import List, Dict, Any
 from faster_whisper import WhisperModel
 from .mock_audio_decoder import MockAudioDecoder
@@ -139,6 +140,30 @@ class FasterWhisperASR(ASRModel):
                 print(f"  [{whisper_segments[i].start:.2f}-{whisper_segments[i].end:.2f}]: {whisper_segments[i].text}")
         except Exception as e:
             print(f"Whisper transcription failed: {e}")
+            print(
+                "Whisper context:",
+                {
+                    "audio_path": audio_path,
+                    "device": self.device,
+                    "compute_type": self.compute_type,
+                    "wav_path": wav_path,
+                    "converted": converted
+                }
+            )
+            if torch.cuda.is_available():
+                try:
+                    print(
+                        "CUDA memory:",
+                        {
+                            "allocated_mb": round(torch.cuda.memory_allocated() / 1024 / 1024, 2),
+                            "reserved_mb": round(torch.cuda.memory_reserved() / 1024 / 1024, 2),
+                            "max_allocated_mb": round(torch.cuda.max_memory_allocated() / 1024 / 1024, 2),
+                            "max_reserved_mb": round(torch.cuda.max_memory_reserved() / 1024 / 1024, 2)
+                        }
+                    )
+                except Exception as mem_e:
+                    print(f"CUDA memory inspection failed: {mem_e}")
+            traceback.print_exc()
             return []
 
         # 2. Diarization with Pyannote
@@ -160,7 +185,6 @@ class FasterWhisperASR(ASRModel):
                 final_segments = self._merge_diarization(whisper_segments, diarization)
             except Exception as e:
                 print(f"Diarization failed: {e}")
-                import traceback
                 traceback.print_exc()
                 # Fallback to just Whisper segments with "Unknown" speaker
                 final_segments = self._fallback_segments(whisper_segments)
