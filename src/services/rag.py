@@ -64,9 +64,12 @@ class RAGService:
                         
                         if 0 <= window_idx < len(windows):
                             window = windows[window_idx]
+                            rich_text = window.get("text_with_speakers")
+                            if isinstance(rich_text, str) and rich_text.strip():
+                                formatted_content = rich_text
                             indices = window.get("segment_indices")
                             
-                            if indices:
+                            if indices and not formatted_content:
                                 start_idx, end_idx = indices
                                 all_segments = self._get_segments(podcast, audio_id)
                                 if all_segments:

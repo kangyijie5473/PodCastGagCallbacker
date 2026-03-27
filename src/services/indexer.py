@@ -15,7 +15,7 @@ class IndexingService:
         self.index_dir = index_dir
         self.llm = llm
         self.llm_context_length = max(1024, int(llm_context_length))
-        self.llm_segments_budget = max(512, self.llm_context_length // 3)
+        self.llm_base_payload_budget = max(512, self.llm_context_length // 2)
         self.llm_merge_max_gap_sec = 1.0
         os.makedirs(index_dir, exist_ok=True)
 
@@ -134,6 +134,25 @@ class IndexingService:
             "end": seg.get("end", 0.0)
         }
 
+    def _build_refine_prompt(self, metadata: Dict[str, Any], payload_segments: List[Dict[str, Any]]) -> str:
+        return (
+            "请根据播客元信息和分段文本执行以下任务："
+            "1) speaker映射修正；2)去除无意义语气词与重复口头禅；3)结合元信息进行专有名词纠错。"
+            "要求保留每条分段的index、start、end，不要合并或拆分分段。"
+            "输出必须是JSON数组，每项包含index,speaker,text三个字段。"
+            "\n播客元信息:\n"
+            f"{json.dumps(metadata, ensure_ascii=False)}"
+            "\n分段:\n"
+            f"{json.dumps(payload_segments, ensure_ascii=False)}"
+        )
+
+    def _compute_payload_budget(self, metadata: Dict[str, Any]) -> int:
+        overhead_prompt = self._build_refine_prompt(metadata, [])
+        overhead_len = len(overhead_prompt)
+        available = self.llm_context_length - overhead_len
+        dynamic_budget = min(self.llm_base_payload_budget, max(256, available))
+        return dynamic_budget
+
     def _merge_adjacent_segments_for_llm(self, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not segments:
             return []
@@ -156,7 +175,7 @@ class IndexingService:
                 merged.append(dict(seg))
         return merged
 
-    def _split_segments_by_budget(self, segments: List[Dict[str, Any]]) -> List[tuple[int, int, List[Dict[str, Any]]]]:
+    def _split_segments_by_budget(self, segments: List[Dict[str, Any]], payload_budget: int) -> List[tuple[int, int, List[Dict[str, Any]]]]:
         chunks: List[tuple[int, int, List[Dict[str, Any]]]] = []
         start = 0
         total = len(segments)
@@ -168,12 +187,12 @@ class IndexingService:
                 item = self._segment_payload_item(segments[end], end)
                 item_len = len(json.dumps(item, ensure_ascii=False))
                 projected = current_len + item_len + (1 if payload_segments else 0)
-                if payload_segments and projected > self.llm_segments_budget:
+                if payload_segments and projected > payload_budget:
                     break
                 payload_segments.append(item)
                 current_len = projected
                 end += 1
-                if projected >= self.llm_segments_budget:
+                if projected >= payload_budget:
                     break
             if not payload_segments:
                 payload_segments.append(self._segment_payload_item(segments[start], start))
@@ -189,21 +208,13 @@ class IndexingService:
         compact_segments = self._merge_adjacent_segments_for_llm(segments)
         total = len(compact_segments)
         refined = []
-        chunks = self._split_segments_by_budget(compact_segments)
+        payload_budget = self._compute_payload_budget(metadata)
+        chunks = self._split_segments_by_budget(compact_segments, payload_budget=payload_budget)
 
         for start, end, payload_segments in chunks:
             chunk = compact_segments[start:end]
 
-            prompt = (
-                "请根据播客元信息和分段文本执行以下任务："
-                "1) speaker映射修正；2)去除无意义语气词与重复口头禅；3)结合元信息进行专有名词纠错。"
-                "要求保留每条分段的index、start、end，不要合并或拆分分段。"
-                "输出必须是JSON数组，每项包含index,speaker,text三个字段。"
-                "\n播客元信息:\n"
-                f"{json.dumps(metadata, ensure_ascii=False)}"
-                "\n分段:\n"
-                f"{json.dumps(payload_segments, ensure_ascii=False)}"
-            )
+            prompt = self._build_refine_prompt(metadata, payload_segments)
             mapped: Dict[int, Dict[str, Any]] = {}
             try:
                 response = self.llm.generate(prompt)
@@ -261,6 +272,14 @@ class IndexingService:
             
             # Aggregate text for embedding (semantic search)
             text = " ".join([s["text"] for s in chunk])
+
+            text_with_speakers_parts = []
+            for s in chunk:
+                speaker = str(s.get("speaker", "Unknown")).strip() or "Unknown"
+                seg_text = str(s.get("text", "")).strip()
+                if seg_text:
+                    text_with_speakers_parts.append(f"<{speaker}>“{seg_text}”")
+            text_with_speakers = " ".join(text_with_speakers_parts)
             
             # Aggregate speaker info for display/filtering
             speakers = list(set([s.get("speaker", 0) for s in chunk]))
@@ -273,6 +292,7 @@ class IndexingService:
                 "start": start_time,
                 "end": end_time,
                 "text": text,
+                "text_with_speakers": text_with_speakers,
                 "speakers": speakers,
                 "segment_indices": [i, end_idx] # Range [start, end)
             })
