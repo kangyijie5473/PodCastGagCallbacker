@@ -11,9 +11,6 @@ class RAGService:
         self.segments_cache = {} # audio_id -> list of segments
 
     def _get_segments(self, podcast_name: str, audio_id: str) -> List[Dict]:
-        key = f"{podcast_name}/{audio_id}"
-        # ... (caching logic)
-        
         # Path: data/{podcast_name}/{audio_id}/segments.json
         # Handle cases where index_dir might be missing
         if not self.searcher.index_dir:
@@ -118,3 +115,30 @@ class RAGService:
         print("Generating answer with LLM...")
         answer = self.llm.generate(user_prompt, system_prompt=system_prompt)
         return answer
+
+    def answer_stream(self, query: str, podcast_name: str = None, audio_id: str = None, top_k: int = 5, results: List[Dict] = None):
+        if results is None:
+            results = self.searcher.search(query, podcast_name=podcast_name, audio_id=audio_id, top_k=top_k)
+
+        if not results:
+            yield "No relevant podcast content found to answer your question."
+            return
+
+        context_str = self._format_context(results)
+        system_prompt = (
+            "You are a helpful podcast assistant. Your task is to answer the user's question "
+            "based ONLY on the provided podcast transcripts. \n"
+            "If the provided context does not contain the answer, say so.\n"
+            "Cite the source Podcast, Episode and time range when possible.\n"
+            "The transcripts include speaker IDs (e.g., Speaker 0, Speaker 1). Use this to distinguish who said what."
+        )
+        user_prompt = (
+            f"User Question: {query}\n\n"
+            f"Retrieved Context:\n"
+            f"{context_str}\n\n"
+            f"Please answer the question based on the context above."
+        )
+
+        print("Generating streaming answer with LLM...")
+        for token in self.llm.generate_stream(user_prompt, system_prompt=system_prompt):
+            yield token

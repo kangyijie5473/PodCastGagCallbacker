@@ -342,7 +342,7 @@
             const useRag = ragToggle.checked;
 
             try {
-                const response = await fetch('/api/search', {
+                const response = await fetch('/api/search/stream', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -358,24 +358,63 @@
                     throw new Error('Search failed');
                 }
 
-                const data = await response.json();
-                
-                // Render AI Answer
-                if (data.answer) {
-                    aiAnswerDiv.style.display = 'block';
-                    // Simple markdown-like parsing for bolding
-                    aiAnswerText.innerHTML = data.answer.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let currentEvent = '';
+                let results = [];
+                let answer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const rawLine of lines) {
+                        const line = rawLine.trim();
+                        if (!line) continue;
+                        if (line.startsWith('event:')) {
+                            currentEvent = line.slice(6).trim();
+                            continue;
+                        }
+                        if (!line.startsWith('data:')) continue;
+                        let payload = {};
+                        try {
+                            payload = JSON.parse(line.slice(5).trim());
+                        } catch (_) {
+                            continue;
+                        }
+
+                        if (currentEvent === 'results') {
+                            results = payload.results || [];
+                        } else if (currentEvent === 'answer') {
+                            const delta = payload.delta || '';
+                            if (delta) {
+                                answer += delta;
+                                aiAnswerDiv.style.display = 'block';
+                                aiAnswerText.innerHTML = answer.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+                                resultsContainer.style.display = 'block';
+                            }
+                        } else if (currentEvent === 'done') {
+                            if (!answer && payload.answer) {
+                                answer = payload.answer;
+                                aiAnswerDiv.style.display = 'block';
+                                aiAnswerText.innerHTML = answer.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+                            }
+                        }
+                    }
                 }
 
-                // Render Search Results
-                if (data.results && data.results.length > 0) {
+                if (results && results.length > 0) {
                     // Show only the top result if RAG is enabled, or maybe first 3?
                     // User request: "只需要展示一个答案" (Show only one answer/result context)
                     // But usually RAG answer is the main thing.
                     // Let's interpret "show only one answer" as showing the AI Answer primarily,
                     // and maybe the single most relevant source clip below it.
                     
-                    const topResult = data.results[0];
+                    const topResult = results[0];
                     const card = document.createElement('div');
                     card.className = 'result-card';
                     

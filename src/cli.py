@@ -40,7 +40,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "search":
-        url = f"{DEFAULT_SERVER_URL}/api/search"
+        url = f"{DEFAULT_SERVER_URL}/api/search/stream"
         payload = {
             "query": args.query,
             "podcast_name": args.name,
@@ -51,19 +51,46 @@ def main():
         try:
             print(f"Sending request to {url}...")
             req_start = time.perf_counter()
-            resp = requests.post(url, json=payload, timeout=60)
+            resp = requests.post(url, json=payload, timeout=300, stream=True)
             req_elapsed_ms = (time.perf_counter() - req_start) * 1000
             resp.raise_for_status()
-            data = resp.json()
-            print(f"Query round-trip: {req_elapsed_ms:.1f} ms")
-            
-            answer = data.get("answer")
-            if answer:
-                print("\n" + "="*20 + " ANSWER " + "="*20)
-                print(answer)
-                print("="*48)
-            
-            results = data.get("results", [])
+            print(f"Query first-byte latency: {req_elapsed_ms:.1f} ms")
+
+            current_event = None
+            results = []
+            got_answer_header = False
+            for raw_line in resp.iter_lines(decode_unicode=True):
+                if raw_line is None:
+                    continue
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("event:"):
+                    current_event = line[len("event:"):].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                payload_text = line[len("data:"):].strip()
+                try:
+                    event_payload = requests.models.complexjson.loads(payload_text)
+                except Exception:
+                    continue
+
+                if current_event == "results":
+                    results = event_payload.get("results", []) or []
+                elif current_event == "answer":
+                    delta = event_payload.get("delta", "")
+                    if delta:
+                        if not got_answer_header:
+                            print("\n" + "="*20 + " ANSWER " + "="*20)
+                            got_answer_header = True
+                        print(delta, end="", flush=True)
+                elif current_event == "done":
+                    break
+
+            if got_answer_header:
+                print("\n" + "="*48)
+
             print(f"\nTop {len(results)} results for '{args.query}':")
             print("="*60)
             for i, res in enumerate(results):
