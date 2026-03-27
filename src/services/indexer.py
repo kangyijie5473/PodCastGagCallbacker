@@ -249,17 +249,6 @@ class IndexingService:
 
         return refined
 
-    def test_llm_refine_segments(self, segments: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        if not self.llm:
-            raise ValueError("LLM is not initialized")
-        meta = dict(metadata or {})
-        if "podcast_name" not in meta:
-            meta["podcast_name"] = "test_podcast"
-        if "audio_id" not in meta:
-            meta["audio_id"] = "test_audio"
-        return self._refine_segments_with_llm(segments, meta)
-
-
     def _create_windows(self, segments, window_size, stride):
         windows = []
         n = len(segments)
