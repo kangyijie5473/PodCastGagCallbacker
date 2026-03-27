@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import requests
+import time
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -49,9 +50,12 @@ def main():
         
         try:
             print(f"Sending request to {url}...")
+            req_start = time.perf_counter()
             resp = requests.post(url, json=payload, timeout=60)
+            req_elapsed_ms = (time.perf_counter() - req_start) * 1000
             resp.raise_for_status()
             data = resp.json()
+            print(f"Query round-trip: {req_elapsed_ms:.1f} ms")
             
             answer = data.get("answer")
             if answer:

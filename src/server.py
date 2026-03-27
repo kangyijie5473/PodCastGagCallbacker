@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,23 +126,38 @@ class SearchResponse(BaseModel):
 
 @app.post("/api/search", response_model=SearchResponse)
 async def search(req: SearchRequest):
+    request_start = time.perf_counter()
     searcher = services["searcher"]
     rag = services.get("rag")
     
     if req.use_rag:
         if not rag:
             # RAG requested but not available
+            vector_start = time.perf_counter()
             results = searcher.search(req.query, podcast_name=req.podcast_name, audio_id=req.audio_id, top_k=req.top_k)
+            vector_ms = (time.perf_counter() - vector_start) * 1000
+            total_ms = (time.perf_counter() - request_start) * 1000
+            print(f"[Timing] /api/search vector={vector_ms:.1f}ms llm=0.0ms total={total_ms:.1f}ms rag=off")
             return {
                 "results": results, 
                 "answer": "RAG service is not available. Please configure LLM_API_KEY in .env file."
             }
             
+        vector_start = time.perf_counter()
         results = searcher.search(req.query, podcast_name=req.podcast_name, audio_id=req.audio_id, top_k=req.top_k)
+        vector_ms = (time.perf_counter() - vector_start) * 1000
+        llm_start = time.perf_counter()
         answer = rag.answer(req.query, podcast_name=req.podcast_name, audio_id=req.audio_id, top_k=req.top_k, results=results)
+        llm_ms = (time.perf_counter() - llm_start) * 1000
+        total_ms = (time.perf_counter() - request_start) * 1000
+        print(f"[Timing] /api/search vector={vector_ms:.1f}ms llm={llm_ms:.1f}ms total={total_ms:.1f}ms rag=on")
         return {"results": results, "answer": answer}
     else:
+        vector_start = time.perf_counter()
         results = searcher.search(req.query, podcast_name=req.podcast_name, audio_id=req.audio_id, top_k=req.top_k)
+        vector_ms = (time.perf_counter() - vector_start) * 1000
+        total_ms = (time.perf_counter() - request_start) * 1000
+        print(f"[Timing] /api/search vector={vector_ms:.1f}ms llm=0.0ms total={total_ms:.1f}ms rag=off")
         return {"results": results, "answer": None}
 
 @app.post("/api/podcast/submit")
