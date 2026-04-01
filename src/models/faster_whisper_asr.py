@@ -1,4 +1,5 @@
 import os
+import time
 import torch
 import warnings
 import soundfile as sf
@@ -107,6 +108,7 @@ class FasterWhisperASR(ASRModel):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
             
         print(f"Transcribing {audio_path}...")
+        pipeline_start = time.perf_counter()
         
         # Prepare Debug Dir for intermediate files
         debug_dir = os.path.join(os.getcwd(), "debug_audio")
@@ -117,10 +119,13 @@ class FasterWhisperASR(ASRModel):
         # (SoundFile often fails on MP4/AAC, so we convert to WAV)
         wav_path = os.path.join(debug_dir, f"{base_name}.wav")
         converted = False
+        convert_ms = 0.0
         
         try:
             print(f"Ensuring WAV format -> {wav_path}...")
+            t_convert = time.perf_counter()
             self._convert_to_wav(audio_path, wav_path)
+            convert_ms = (time.perf_counter() - t_convert) * 1000
             converted = True
         except Exception as e:
             print(f"Conversion failed, trying original file: {e}")
@@ -130,16 +135,21 @@ class FasterWhisperASR(ASRModel):
         # USE ORIGINAL AUDIO for Whisper to avoid quality loss from conversion if possible
         # Whisper handles MP4/AAC natively via ffmpeg usually.
         print(f"Using ORIGINAL audio for Whisper: {audio_path}")
+        asr_start = time.perf_counter()
         try:
             segments_generator, info = self.model.transcribe(audio_path, beam_size=5, language='zh', vad_filter=True)
             whisper_segments = list(segments_generator)
+            asr_ms = (time.perf_counter() - asr_start) * 1000
             print(f"Transcription complete. Found {len(whisper_segments)} segments.")
+            print(f"[Timing] ASR(Whisper)={asr_ms:.1f}ms convert={convert_ms:.1f}ms")
             
             # Print first few segments for debugging
             for i in range(min(5, len(whisper_segments))):
                 print(f"  [{whisper_segments[i].start:.2f}-{whisper_segments[i].end:.2f}]: {whisper_segments[i].text}")
         except Exception as e:
+            asr_ms = (time.perf_counter() - asr_start) * 1000
             print(f"Whisper transcription failed: {e}")
+            print(f"[Timing] ASR(Whisper) failed after {asr_ms:.1f}ms convert={convert_ms:.1f}ms")
             print(
                 "Whisper context:",
                 {
@@ -173,6 +183,7 @@ class FasterWhisperASR(ASRModel):
         final_segments = []
         if self.diarization_pipeline:
             print(f"Running speaker diarization on {diarization_path}...")
+            diar_start = time.perf_counter()
             try:
                 # Run pipeline
                 diarization = self.diarization_pipeline(diarization_path)
@@ -183,14 +194,21 @@ class FasterWhisperASR(ASRModel):
                     diarization = diarization.speaker_diarization
                  
                 final_segments = self._merge_diarization(whisper_segments, diarization)
+                diar_ms = (time.perf_counter() - diar_start) * 1000
+                total_ms = (time.perf_counter() - pipeline_start) * 1000
+                print(f"[Timing] Diarization(Pyannote)={diar_ms:.1f}ms total_pipeline={total_ms:.1f}ms")
             except Exception as e:
+                diar_ms = (time.perf_counter() - diar_start) * 1000
                 print(f"Diarization failed: {e}")
+                print(f"[Timing] Diarization(Pyannote) failed after {diar_ms:.1f}ms")
                 traceback.print_exc()
                 # Fallback to just Whisper segments with "Unknown" speaker
                 final_segments = self._fallback_segments(whisper_segments)
         else:
             print("Diarization pipeline not available, skipping.")
             final_segments = self._fallback_segments(whisper_segments)
+        total_ms = (time.perf_counter() - pipeline_start) * 1000
+        print(f"[Timing] Transcribe pipeline total={total_ms:.1f}ms")
             
         return final_segments
 
