@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 from src.models.faster_whisper_asr import FasterWhisperASR
+from src.models.whisper_asr import WhisperASR
 from src.models.embedding import LocalEmbedding
 try:
     from src.models.reranker import RerankerModel
@@ -41,11 +42,16 @@ async def lifespan(app: FastAPI):
     # Load environment variables
     load_dotenv()
     
-    # Initialize models
-    # We use a default config for now
-    model_size = "large-v3"
-    
-    asr = FasterWhisperASR(model_size=model_size)
+    asr_backend = os.getenv("ASR_BACKEND", "faster_whisper").strip().lower()
+    asr_model_size_env = os.getenv("ASR_MODEL_SIZE")
+    if asr_backend == "whisper":
+        asr_model_size = asr_model_size_env or "large"
+        print(f"Initializing ASR backend=whisper model_size={asr_model_size}")
+        asr = WhisperASR(model_size=asr_model_size)
+    else:
+        asr_model_size = asr_model_size_env or "large-v3"
+        print(f"Initializing ASR backend=faster_whisper model_size={asr_model_size}")
+        asr = FasterWhisperASR(model_size=asr_model_size)
     embed = LocalEmbedding()
     
     # Initialize Reranker
@@ -191,6 +197,7 @@ async def search_stream(req: SearchRequest):
 
         llm_start = time.perf_counter()
         answer_parts = []
+        ttft_ms = None
         for token in rag.answer_stream(
             req.query,
             podcast_name=req.podcast_name,
@@ -198,12 +205,16 @@ async def search_stream(req: SearchRequest):
             top_k=req.top_k,
             results=results
         ):
+            if ttft_ms is None:
+                ttft_ms = (time.perf_counter() - llm_start) * 1000
+                yield _sse("ttft", {"ttft_ms": round(ttft_ms, 1)})
             answer_parts.append(token)
             yield _sse("answer", {"delta": token})
 
         llm_ms = (time.perf_counter() - llm_start) * 1000
         total_ms = (time.perf_counter() - request_start) * 1000
-        print(f"[Timing] /api/search/stream vector={vector_ms:.1f}ms llm={llm_ms:.1f}ms total={total_ms:.1f}ms rag=on")
+        ttft_show = ttft_ms if ttft_ms is not None else -1.0
+        print(f"[Timing] /api/search/stream vector={vector_ms:.1f}ms ttft={ttft_show:.1f}ms llm={llm_ms:.1f}ms total={total_ms:.1f}ms rag=on")
         yield _sse("done", {"answer": "".join(answer_parts)})
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

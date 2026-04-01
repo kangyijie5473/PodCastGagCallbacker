@@ -59,6 +59,8 @@ def main():
             current_event = None
             results = []
             got_answer_header = False
+            server_ttft_ms = None
+            local_ttft_ms = None
             for raw_line in resp.iter_lines(decode_unicode=True):
                 if raw_line is None:
                     continue
@@ -78,9 +80,16 @@ def main():
 
                 if current_event == "results":
                     results = event_payload.get("results", []) or []
+                elif current_event == "ttft":
+                    server_ttft_ms = event_payload.get("ttft_ms")
+                    if server_ttft_ms is not None:
+                        print(f"Server TTFT: {float(server_ttft_ms):.1f} ms")
                 elif current_event == "answer":
                     delta = event_payload.get("delta", "")
                     if delta:
+                        if local_ttft_ms is None:
+                            local_ttft_ms = (time.perf_counter() - req_start) * 1000
+                            print(f"Client TTFT: {local_ttft_ms:.1f} ms")
                         if not got_answer_header:
                             print("\n" + "="*20 + " ANSWER " + "="*20)
                             got_answer_header = True
