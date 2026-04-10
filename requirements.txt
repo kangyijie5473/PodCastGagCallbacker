@@ -1,8 +1,12 @@
 faster-whisper
+openai-whisper
+funasr
 pyannote.audio
 torch
 torchaudio
 sentence-transformers
+transformers
+bitsandbytes
 numpy
 openai
 python-dotenv
@@ -10,8 +14,8 @@ requests
 fastapi
 uvicorn
 python-multipart
+pydantic
 tqdm
 feedparser
-openai
 librosa
 soundfile
